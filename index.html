@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset=utf-8 />
+	<title>Ohio Unemployment Rates by County 2017</title>
+	<meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.3.1/dist/leaflet.css" />
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/7.0.0/normalize.min.css" />
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css" />
+
+	<style>
+		/* custom styles here */
+		body {
+			background: #f5f5f5;
+		}
+		h3 {
+			font-size: 2em;
+			font-style: italic;
+			line-height: .1;
+		}
+		.container {
+			margin-top: 2rem;
+		}
+		#map {
+			border: 2px solid #d3d3d3;
+			height: 525px;
+			margin-top: 2rem;
+			margin-bottom: 36px;
+		}
+		.leaflet-tooltip {
+			min-width: 140px;
+			font-size: 140%;
+			white-space: normal;
+		}
+		#legend {
+			padding: 6px 8px;
+			font-size: 1em;
+			background: rgba(255, 255, 204, 0.8);
+			box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+			border-radius: 5px;
+			max-width: 165px;
+		}
+		#legend h5 {
+			font-size: 2.1rem;
+		}
+		#legend span {
+			width: 20px;
+			height: 20px;
+			float: left;
+			margin: 0 10px 4px 0;
+		}
+		#legend label {
+			font-size: 1.2em;
+		}
+		#legend label:after {
+			content: '';
+			display: block;
+			clear: both;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="container">
+		<div class="row">
+				<div class="twelve columns">
+							<h1>Ohio Employment Rates by County</h1>
+							<h3>&nbsp (Population 16 Years of Age & Over as of December 2017)</h3>
+				</div>
+		</div>
+		<div class="row">
+			<div id='map' class="twelve columns"></div>
+		</div>
+		<section class="row">
+			<div class="six columns">
+			<h2>About this map:</h2>
+				<ul>
+					<li><b>Map authored by: <i></b><a target="_blank" href="https://github.com/jefftman24">Jeff Tiemann</a></i></li>
+					<li><b>Created: </b><i>January 30th, 2018</li>
+					<li><b>Data source: </b><a target="_blank" href="http://factfinder.census.gov/">US Census Bureau's American Fact Finder</a></li>
+
+				</ul>
+			</div>
+			<div class="six columns u-pull-right">
+					<p>The above map is a depiction of the employment percentage rates of the state of Ohio by county. The statistics are based on the portion of the population, age 16 and above, both civilian and military, that are considered in the labor force. Data provided by the United States Census Bureau and published in the month of December 2017.
+					</p>
+			</div>
+</section>
+	</div>
+
+	<!-- legend div is selected by the JS and dynamically added to the map -->
+	<div id="legend"></div>
+
+	<!-- ui-controls div is selected by the JS and dynamically added to the map -->
+	<div id='ui-controls'>
+		<label>Choose Attribute to Map:</label>
+		<select id="employment">
+			<option value="_HC01_VC06" selected>Employed</option>
+			<option value="_HC01_VC07">Unemployed</option>
+			<option value="_HC01_VC08">Armed Forces</option>
+		</select>
+	</div> <!-- end ui-controls -->
+
+	<script src="http://code.jquery.com/jquery-3.2.1.min.js"></script>
+	<script src="https://unpkg.com/leaflet@1.3.1/dist/leaflet.js"></script>
+	<script src="https://unpkg.com/simple-statistics@5.2.1/dist/simple-statistics.min.js"></script>
+
+	<script>
+		// initial map options, disabling pan/zoom
+		var options = {
+			scrollWheelZoom: false,
+			zoomSnap: .1,
+			dragging: false,
+			zoomControl: false
+		}
+
+		// create Leaflet map and apply options
+		var map = L.map('map', options);
+
+		// set global variables for map layer,
+		// mapped attribute, and normalizing attribute
+		var attributeValue = "_HC01_VC06",
+			normValue = "_HC01_VC04";
+
+		// create object to hold legend titles
+		var labels = {
+			"_HC01_VC06": "Percentage Population Employed",
+			"_HC01_VC07": "Percentage Population Unemployed",
+			"_HC01_VC08": "Percentage Population in the Armed Forces"
+		}
+
+		// AJAX call to load county-level data
+		$.getJSON("data/oh_labor.json", function(data) {
+
+			drawMap(data); // draw the map using GeoJSON data
+
+		});
+
+		function drawMap(data) {
+
+			// create Leaflet data layer and add to map
+			var dataLayer = L.geoJson(data, {
+				style: function(feature) {
+					// style counties with initial default path options
+					return {
+						color: '#808080',
+						weight: 2,
+						fillOpacity: 1,
+						fillColor: '#1f78b4'
+					};
+				},
+				onEachFeature: function(feature, layer) {
+
+					// when mousing over a layer
+					layer.on('mouseover', function() {
+
+						// change the stroke color and bring that element to the front
+						layer.setStyle({
+							color: '#ff0000'
+						}).bringToFront();
+					});
+
+					// on mousing off layer
+					layer.on('mouseout', function() {
+
+						// reset the layer style to its original stroke color
+						layer.setStyle({
+							color: '#808080'
+						});
+					});
+				}
+			}).addTo(map);
+
+			// fit the map's bounds and zoom level using the dataLayer extent
+			map.fitBounds(dataLayer.getBounds(), {
+				paddingTopLeft: [25, 25] // push off top left for sake of legend
+			});
+
+			addUi(dataLayer); // add the UI controls
+			updateMap(dataLayer); // update the map with the current data attribute
+
+		}
+
+		function updateMap (dataLayer,currentYear) {
+			// get the class breaks for the current data attribute
+			var breaks = getClassBreaks(dataLayer);
+
+			addLegend(breaks); // add the legend to the map using breaks
+
+			// loop through each county layer to update the color and tooltip info
+			dataLayer.eachLayer(function(layer) {
+
+				var props = layer.feature.properties;
+
+				// set the fill color of layer based on its normalized data value
+				layer.setStyle({
+					fillColor: getColor(props[attributeValue] /
+						props[normValue], breaks)
+				});
+
+				// assemble string sequence of info for tooltip (end line break with + operator)
+				var tooltipInfo = "<b>" + props["NAME"] +
+													" County</b></br>" +
+													((props[attributeValue] / props[normValue]) * 100).toLocaleString() +
+													"%";
+
+				// bind a tooltip to layer with county-specific information
+				layer.bindTooltip(tooltipInfo, {
+					// sticky property so tooltip follows the mouse
+					sticky: true,
+					tooltipAnchor: [200, 200]
+				});
+
+			});
+		}
+
+		function getClassBreaks(dataLayer) {
+
+			// create empty Array for storing values
+			var values = [];
+
+			// loop through all the counties
+			dataLayer.eachLayer(function(layer) {
+				var value = layer.feature.properties[attributeValue] / layer.feature.properties[normValue];
+				values.push(value); // push the normalized value for each layer into the Array
+			});
+
+			// determine similar clusters
+			var clusters = ss.ckmeans(values, 5);
+
+			// create an array of the lowest value within each cluster
+			var breaks = clusters.map(function(cluster) {
+				return [cluster[0], cluster.pop()];
+			});
+
+			//return array of arrays, e.g., [[0.24,0.25], [0.26, 0.37], etc]
+			return breaks;
+
+		}
+
+		function getColor(d, breaks) {
+			// function accepts a single normalized data attribute value
+			// and uses a series of conditional statements to determine which
+			// which color value to return to return to the function caller
+
+			if (d <= breaks[0][1]) {
+				return '#edf8e9';
+			} else if (d <= breaks[1][1]) {
+				return '#bae4b3';
+			} else if (d <= breaks[2][1]) {
+				return '#74c476';
+			} else if (d <= breaks[3][1]) {
+				return '#31a354'
+			} else if (d <= breaks[4][1]) {
+				return '#006d2c'
+			}
+
+		}
+
+		function addLegend(breaks) {
+
+			// create a new Leaflet control object, and position it top left
+			var legendControl = L.control({ position: 'topleft' });
+
+			// when the legend is added to the map
+			legendControl.onAdd = function(map) {
+
+				// select a div element with an id attribute of legend
+				var legend = L.DomUtil.get('legend');
+
+				// disable scroll and click/touch on map when on legend
+				L.DomEvent.disableScrollPropagation(legend);
+				L.DomEvent.disableClickPropagation(legend);
+
+				// return the selection to the method
+				return legend;
+
+			};
+
+			// add the empty legend div to the map
+			legendControl.addTo(map);
+
+			// select the legend, add a title, begin an unordered list and assign to a variable
+			var legend = $('#legend').html("<h5>" + labels[attributeValue] + "</h5>");
+
+			// loop through the Array of classification break values
+			for (var i = 0; i <= breaks.length - 1; i++) {
+
+				var color = getColor(breaks[i][0], breaks);
+
+				legend.append(
+					'<span style="background:' + color + '"></span> ' +
+					'<label>' + (breaks[i][0] * 100).toLocaleString() + ' &mdash; ' +
+					(breaks[i][1] * 100).toLocaleString() + ' %</label>');
+			}
+
+		}
+
+		function addUi(dataLayer) {
+
+		  	// create the slider control
+		  	var selectControl = L.control({ position: 'bottomright'} );
+
+		  	// when control is added
+		  	selectControl.onAdd = function(map) {
+		    		// get the element with id attribute of ui-controls
+		    		return L.DomUtil.get("ui-controls");
+		  	}
+		  	// add the control to the map
+		  	selectControl.addTo(map);
+
+				$('select[id="employment"]').change(function() {
+  					// code executed here when change event occurs
+  					attributeValue = this.value;
+						// call update function
+						updateMap(dataLayer);
+				});
+
+		}
+
+	</script>
+
+</body>
+
+</html>
